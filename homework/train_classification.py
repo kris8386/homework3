@@ -8,7 +8,7 @@ import torch.utils.tensorboard as tb
 import torch.nn as nn
 
 from .models import Classifier, load_model, save_model
-from datasets.classification_dataset import load_data
+from .datasets.classification_dataset import load_data
 
 def train_classification(
     exp_dir: str = "logs",
