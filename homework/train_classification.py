@@ -17,7 +17,7 @@ def train(
     lr: float = 1e-3,
     batch_size: int = 128,
     seed: int = 2024,
-    transform_pipeline: str = "default",
+    transform_pipeline: str = "augmented",
     **kwargs,
 ):
     if torch.cuda.is_available():
