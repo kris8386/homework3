@@ -7,7 +7,6 @@ from torchvision import transforms
 
 LABEL_NAMES = ["background", "kart", "pickup", "nitro", "bomb", "projectile"]
 
-
 class SuperTuxDataset(Dataset):
     """
     SuperTux dataset for classification
@@ -26,29 +25,31 @@ class SuperTuxDataset(Dataset):
                 if label in LABEL_NAMES:
                     img_path = Path(dataset_path, fname)
                     label_id = LABEL_NAMES.index(label)
-
                     self.data.append((img_path, label_id))
 
     def get_transform(self, transform_pipeline: str = "default"):
-        xform = None
-
+        """
+        Returns a transformation pipeline based on the specified pipeline type.
+        """
         if transform_pipeline == "default":
-            xform = transforms.ToTensor()
-        elif transform_pipeline == "aug":
-            # construct your custom augmentation
-            xform = transforms.Compose(
-                [
-                    # TODO: fix
-                    # transforms.ColorJitter(0.9, 0.9, 0.9, 0.1),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.ToTensor(),
-                ]
-            )
-
-        if xform is None:
+            return transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.2788, 0.2657, 0.2629], std=[0.2064, 0.1944, 0.2252]),
+            ])
+        
+        elif transform_pipeline == "augmented":  # Data Augmentation for training
+            return transforms.Compose([
+                transforms.RandomHorizontalFlip(p=0.5),  # 50% chance of flipping
+                transforms.RandomRotation(degrees=15),  # Rotate by ±15 degrees
+                transforms.RandomResizedCrop(size=64, scale=(0.8, 1.0)),  # Random crop and resize
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05),  # Adjust color
+                transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),  # Apply slight blur
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.2788, 0.2657, 0.2629], std=[0.2064, 0.1944, 0.2252]),
+            ])
+        
+        else:
             raise ValueError(f"Invalid transform {transform_pipeline} specified!")
-
-        return xform
 
     def __len__(self):
         return len(self.data)
@@ -77,11 +78,11 @@ def load_data(
     The specified transform_pipeline must be implemented in the SuperTuxDataset class.
 
     Args:
-        transform_pipeline (str): 'default', 'aug', or other custom transformation pipelines
+        transform_pipeline (str): 'default', 'augmented', or other custom transformation pipelines
         return_dataloader (bool): returns either DataLoader or Dataset
-        num_workers (int): data workers, set to 0 for VSCode debugging
+        num_workers (int): data workers, set to 0 for debugging
         batch_size (int): batch size
-        shuffle (bool): should be true for train and false for val
+        shuffle (bool): should be true for training and false for validation/testing
 
     Returns:
         DataLoader or Dataset
