@@ -98,9 +98,9 @@ def train(
             )
 
         # Check for early stopping if validation accuracy exceeds 0.80
-        if epoch_val_acc >= 0.80:
-            print("Early stopping: Validation accuracy threshold reached.")
-            break
+        # if epoch_val_acc >= 0.80:
+        #     print("Early stopping: Validation accuracy threshold reached.")
+        #     break
 
     save_model(model)
     torch.save(model.state_dict(), log_dir / f"{model_name}.th")
