@@ -5,9 +5,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.utils.tensorboard as tb
+import torch.nn as nn
 
-from .models import Classifier, ClassificationLoss, load_model, save_model
-from .utils import load_data
+from .models import Classifier, load_model, save_model
+from datasets.classification_dataset import load_data
 
 def train_classification(
     exp_dir: str = "logs",
@@ -45,7 +46,7 @@ def train_classification(
     val_data = load_data("classification_data/val", shuffle=False)
 
     # Define loss function and optimizer
-    loss_func = ClassificationLoss()
+    loss_func = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     global_step = 0
