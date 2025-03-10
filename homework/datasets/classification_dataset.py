@@ -37,7 +37,7 @@ class SuperTuxDataset(Dataset):
                 transforms.Normalize(mean=[0.2788, 0.2657, 0.2629], std=[0.2064, 0.1944, 0.2252]),
             ])
         
-        elif transform_pipeline == "augmented":  # Data Augmentation for training
+        elif transform_pipeline == "aug":  # Data Augmentation for training
             return transforms.Compose([
                 transforms.RandomHorizontalFlip(p=0.5),  # 50% chance of flipping
                 transforms.RandomRotation(degrees=15),  # Rotate by ±15 degrees
