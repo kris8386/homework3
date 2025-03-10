@@ -10,7 +10,7 @@ import torch.nn as nn
 from .models import Classifier, load_model, save_model
 from .datasets.classification_dataset import load_data
 
-def train_classification(
+def train(
     exp_dir: str = "logs",
     model_name: str = "classifier",
     num_epoch: int = 50,
