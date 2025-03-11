@@ -104,12 +104,13 @@ def train(
                 lane_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
             
             computed_metrics = metric.compute()
-            miou = computed_metrics['iou']
+            confusion_matrix_metrics = confusion_matrix.compute()
+            miou = confusion_matrix_metrics['iou']
             mean_depth_error = computed_metrics['abs_depth_error']
             lane_boundary_error = computed_metrics['tp_depth_error']
             classwise_iou = computed_metrics.get('classwise_iou', {})
             
-            print(f"Class-wise IoU: {classwise_iou}")
+            print(f"mIoU: {miou}")
             print(f"Depth Prediction: Min={depth_output.min().item()}, Max={depth_output.max().item()}")
             print(f"Segmentation Output: Min={seg_output.min().item()}, Max={seg_output.max().item()}")
         
