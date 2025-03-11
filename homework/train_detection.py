@@ -102,8 +102,8 @@ def train(
                 metrics["val_seg_loss"].append(loss_seg.item())
                 metrics["val_depth_loss"].append(loss_depth.item())
                 
-                confusion_matrix.add(seg_pred, seg_target)
-                metric.add(seg_pred, seg_target, depth_output, depth_target)
+                confusion_matrix.add(seg_pred.view(-1), seg_target.view(-1))
+                metric.add(seg_pred.view(-1), seg_target.view(-1), depth_output, depth_target)
                 val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
                 lane_depth_errors.append(torch.abs(depth_output[seg_target > 0] - depth_target[seg_target > 0]).mean().item())
             
