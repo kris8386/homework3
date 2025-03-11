@@ -52,7 +52,7 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     global_step = 0
-    metrics = {"train_seg_loss": [], "train_depth_loss": [], "val_seg_loss": [], "val_depth_loss": []}
+    metrics = {key: [] for key in ['train_seg_loss', 'train_depth_loss', 'val_seg_loss', 'val_depth_loss']}
 
      # Training loop
     for epoch in range(num_epoch):
@@ -103,11 +103,11 @@ def train(
                 val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
                 lane_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
             
-            metrics = metric.compute()
-            miou = confusion_matrix.compute()['iou']
-            mean_depth_error = np.mean(val_depth_errors)
-            lane_boundary_error = np.mean(lane_depth_errors)
-            classwise_iou = metrics.get('classwise_iou', {})
+            computed_metrics = metric.compute()
+            miou = computed_metrics['iou']
+            mean_depth_error = computed_metrics['abs_depth_error']
+            lane_boundary_error = computed_metrics['tp_depth_error']
+            classwise_iou = computed_metrics.get('classwise_iou', {})
             
             print(f"Class-wise IoU: {classwise_iou}")
             print(f"Depth Prediction: Min={depth_output.min().item()}, Max={depth_output.max().item()}")
