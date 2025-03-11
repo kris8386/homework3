@@ -47,7 +47,8 @@ def train(
     val_data = load_data("drive_data/val", shuffle=False)
 
     # Define loss functions and optimizer
-    segmentation_loss = nn.CrossEntropyLoss()
+    weights = torch.tensor([0.1, 1.0, 1.0], device=device)
+    segmentation_loss = nn.CrossEntropyLoss(weight=weights)
     depth_loss = nn.L1Loss()  # Switched to L1 loss for better depth prediction
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -65,8 +66,10 @@ def train(
             img, seg_target, depth_target = batch["image"].to(device), batch["track"].to(device), batch["depth"].to(device)
             
             optimizer.zero_grad()
-            seg_output, depth_output = model(img)
+            seg_output = torch.nn.functional.softmax(model(img)[0], dim=1)
+            depth_output = model(img)[1]
             seg_pred = seg_output.argmax(dim=1)
+            seg_target = seg_target.long()
             
             loss_seg = segmentation_loss(seg_output, seg_target)
             loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)  # Ensure depth output stays within 0-1
@@ -102,7 +105,7 @@ def train(
                 confusion_matrix.add(seg_pred, seg_target)
                 metric.add(seg_pred, seg_target, depth_output, depth_target)
                 val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
-                lane_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
+                lane_depth_errors.append(torch.abs(depth_output[seg_target > 0] - depth_target[seg_target > 0]).mean().item())
             
             computed_metrics = metric.compute()
             miou = computed_metrics['iou']
