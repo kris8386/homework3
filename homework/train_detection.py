@@ -48,7 +48,7 @@ def train(
 
     # Define loss functions and optimizer
     segmentation_loss = nn.CrossEntropyLoss()
-    depth_loss = nn.L1Loss()  # Switched to L1 loss for better depth prediction
+    depth_loss = nn.L1Loss(reduction='mean')  # Switched to L1 loss for better depth prediction
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     global_step = 0
