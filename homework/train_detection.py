@@ -47,15 +47,14 @@ def train(
     val_data = load_data("drive_data/val", shuffle=False)
 
     # Define loss functions and optimizer
-    weights = torch.tensor([0.1, 1.0, 1.0], device=device)
-    segmentation_loss = nn.CrossEntropyLoss(weight=weights)
+    segmentation_loss = nn.CrossEntropyLoss()
     depth_loss = nn.L1Loss()  # Switched to L1 loss for better depth prediction
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     global_step = 0
     metrics = {key: [] for key in ['train_seg_loss', 'train_depth_loss', 'val_seg_loss', 'val_depth_loss']}
 
-    # Training loop
+     # Training loop
     for epoch in range(num_epoch):
         for key in metrics:
             metrics[key].clear()
@@ -66,10 +65,7 @@ def train(
             img, seg_target, depth_target = batch["image"].to(device), batch["track"].to(device), batch["depth"].to(device)
             
             optimizer.zero_grad()
-            seg_output = torch.nn.functional.softmax(model(img)[0], dim=1)
-            depth_output = model(img)[1]
-            seg_pred = seg_output.argmax(dim=1)
-            seg_target = seg_target.long()
+            seg_output, depth_output = model(img)
             
             loss_seg = segmentation_loss(seg_output, seg_target)
             loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)  # Ensure depth output stays within 0-1
@@ -102,15 +98,15 @@ def train(
                 metrics["val_seg_loss"].append(loss_seg.item())
                 metrics["val_depth_loss"].append(loss_depth.item())
                 
-                confusion_matrix.add(seg_pred.view(-1), seg_target.view(-1))
-                metric.add(seg_pred.view(-1), seg_target.view(-1), depth_output, depth_target)
+                confusion_matrix.add(seg_output.argmax(dim=1), seg_target)
+                metric.add(seg_output.argmax(dim=1), seg_target, depth_output, depth_target)
                 val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
-                lane_depth_errors.append(torch.abs(depth_output[seg_target > 0] - depth_target[seg_target > 0]).mean().item())
+                lane_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
             
             computed_metrics = metric.compute()
             miou = computed_metrics['iou']
             mean_depth_error = computed_metrics['abs_depth_error']
-            lane_boundary_error = computed_metrics.get('tp_depth_error', float('inf'))
+            lane_boundary_error = computed_metrics['tp_depth_error']
             classwise_iou = computed_metrics.get('classwise_iou', {})
             
             print(f"Class-wise IoU: {classwise_iou}")
@@ -128,17 +124,18 @@ def train(
         logger.add_scalar("Metrics/Depth_MAE", mean_depth_error, epoch)
         logger.add_scalar("Metrics/Lane_Depth_MAE", lane_boundary_error, epoch)
 
+
     save_model(model)
     torch.save(model.state_dict(), log_dir / f"{model_name}.th")
     print(f"Model saved to {log_dir / f'{model_name}.th'}")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_dir", type=str, default="logs")
-    parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--num_epoch", type=int, default=50)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--seed", type=int, default=2024)
-    parser.add_argument("--transform_pipeline", type=str, default="default", help="Specify data augmentation pipeline")
-    train(**vars(parser.parse_args()))
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--exp_dir", type=str, default="logs")
+        parser.add_argument("--model_name", type=str, required=True)
+        parser.add_argument("--num_epoch", type=int, default=50)
+        parser.add_argument("--lr", type=float, default=1e-3)
+        parser.add_argument("--batch_size", type=int, default=128)
+        parser.add_argument("--seed", type=int, default=2024)
+        parser.add_argument("--transform_pipeline", type=str, default="default", help="Specify data augmentation pipeline")
+        train(**vars(parser.parse_args()))
