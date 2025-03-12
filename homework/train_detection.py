@@ -9,10 +9,12 @@ import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast  # Mixed precision training
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+# --- Make sure to import ConfusionMatrix ---
 from .models import Detector, load_model, save_model
 from .datasets.road_dataset import load_data
-from .metrics import DetectionMetric, ConfusionMatrix
+from .metrics import DetectionMetric, ConfusionMatrix  # <--- HERE
 from segmentation_models_pytorch.losses import DiceLoss
+
 
 def train(
     exp_dir: str = "logs",
@@ -34,28 +36,41 @@ def train(
     model = load_model(model_name, **kwargs).to(device)
     model.train()
 
-    train_data = load_data("drive_data/train", shuffle=True, batch_size=batch_size, num_workers=4, transform_pipeline=transform_pipeline)
+    # Load train/val data
+    train_data = load_data(
+        "drive_data/train",
+        shuffle=True,
+        batch_size=batch_size,
+        num_workers=4,
+        transform_pipeline=transform_pipeline,
+    )
     val_data = load_data("drive_data/val", shuffle=False)
 
-    # Loss Functions
-    class_weights = torch.tensor([0.1, 0.3, 0.6]).to(device)  # Adjust based on class distribution
-    segmentation_loss = DiceLoss()  # Improved segmentation loss
-    depth_loss = nn.L1Loss(reduction='mean')
+    # Define losses
+    class_weights = torch.tensor([0.1, 0.3, 0.6]).to(device)  # Example weighting
+    segmentation_loss = DiceLoss()  # Or use cross-entropy, etc.
+    depth_loss = nn.L1Loss(reduction="mean")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5, verbose=True)
     scaler = GradScaler()
 
     global_step = 0
-    metrics = {key: [] for key in ['train_seg_loss', 'train_depth_loss', 'val_seg_loss', 'val_depth_loss']}
+    metrics = {key: [] for key in ["train_seg_loss", "train_depth_loss", "val_seg_loss", "val_depth_loss"]}
 
     for epoch in range(num_epoch):
+        # ---------------------
+        # Training Loop
+        # ---------------------
         model.train()
         for key in metrics:
             metrics[key].clear()
 
         for batch in train_data:
-            img, seg_target, depth_target = batch["image"].to(device), batch["track"].to(device), batch["depth"].to(device)
+            img = batch["image"].to(device)
+            seg_target = batch["track"].to(device)
+            depth_target = batch["depth"].to(device)
+
             optimizer.zero_grad()
 
             with autocast():  # Mixed precision
@@ -70,38 +85,65 @@ def train(
 
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
+
             logger.add_scalar("Loss/train_segmentation", loss_seg.item(), global_step)
             logger.add_scalar("Loss/train_depth", loss_depth.item(), global_step)
             global_step += 1
 
+        # ---------------------
+        # Validation Loop
+        # ---------------------
         with torch.no_grad():
             model.eval()
-            confusion_matrix = ConfusionMatrix(num_classes=3)
-            metric = DetectionMetric(num_classes=3)
-            val_depth_errors = []
-            
-            for batch in val_data:
-                img, seg_target, depth_target = batch["image"].to(device), batch["track"].to(device), batch["depth"].to(device)
-                seg_output, depth_output = model(img)
+            confusion_matrix = ConfusionMatrix(num_classes=3)  # For mIoU & accuracy
+            detection_metric = DetectionMetric(num_classes=3)  # If also tracking detection/road-depth metrics
 
+            val_depth_errors = []
+            for batch in val_data:
+                img = batch["image"].to(device)
+                seg_target = batch["track"].to(device)
+                depth_target = batch["depth"].to(device)
+
+                seg_output, depth_output = model(img)
                 loss_seg = segmentation_loss(seg_output, seg_target)
                 loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
 
                 metrics["val_seg_loss"].append(loss_seg.item())
                 metrics["val_depth_loss"].append(loss_depth.item())
 
-                confusion_matrix.add(seg_output.argmax(dim=1), seg_target)
-                metric.add(seg_output.argmax(dim=1), seg_target, depth_output, depth_target)
-                val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
-            
-            computed_metrics = metric.compute()
-            confusion_matrix_metrics = confusion_matrix.compute()
-            miou = confusion_matrix_metrics['iou']
-            mean_depth_error = computed_metrics['abs_depth_error']
-            lane_boundary_error = computed_metrics['tp_depth_error']
-            
-            print(f"Epoch {epoch} | mIoU: {miou:.4f} | Depth MAE: {mean_depth_error:.4f} | Lane Depth MAE: {lane_boundary_error:.4f}")
+                # Argmax to get predicted class labels
+                seg_preds = seg_output.argmax(dim=1)  # (B, H, W)
 
+                # Update confusion matrix (for mIoU)
+                confusion_matrix.add(seg_preds, seg_target)
+
+                # Optionally use your detection metric (if needed)
+                detection_metric.add(seg_preds, seg_target, depth_output, depth_target)
+
+                # Example: track overall depth MAE
+                val_depth_errors.append(torch.abs(depth_output - depth_target).mean().item())
+
+            # Compute confusion matrix metrics (mean IoU, overall accuracy)
+            confusion_matrix_metrics = confusion_matrix.compute()
+            miou = confusion_matrix_metrics["iou"]  # Mean IoU
+            accuracy = confusion_matrix_metrics["accuracy"]  # Pixel accuracy (if you want to track)
+
+            # Compute detection metrics
+            computed_det_metrics = detection_metric.compute()
+            mean_depth_error = computed_det_metrics["abs_depth_error"]  # Example from your detection metric
+            lane_boundary_error = computed_det_metrics["tp_depth_error"]
+
+            print(
+                f"Epoch {epoch} "
+                f"| mIoU: {miou:.4f} "
+                f"| Acc: {accuracy:.4f} "
+                f"| Depth MAE: {mean_depth_error:.4f} "
+                f"| Lane Depth MAE: {lane_boundary_error:.4f}"
+            )
+
+        # ---------------------
+        # End of Epoch Logging & Scheduler
+        # ---------------------
         epoch_train_seg_loss = torch.tensor(metrics["train_seg_loss"]).mean()
         epoch_train_depth_loss = torch.tensor(metrics["train_depth_loss"]).mean()
         epoch_val_seg_loss = torch.tensor(metrics["val_seg_loss"]).mean()
@@ -109,14 +151,23 @@ def train(
 
         logger.add_scalar("Loss/val_segmentation", epoch_val_seg_loss, epoch)
         logger.add_scalar("Loss/val_depth", epoch_val_depth_loss, epoch)
+
+        # Log the new metrics
         logger.add_scalar("Metrics/mIoU", miou, epoch)
+        logger.add_scalar("Metrics/Accuracy", accuracy, epoch)
         logger.add_scalar("Metrics/Depth_MAE", mean_depth_error, epoch)
         logger.add_scalar("Metrics/Lane_Depth_MAE", lane_boundary_error, epoch)
-        scheduler.step(miou)  # Adjust learning rate based on mIoU
 
+        # Use mIoU to drive the learning rate scheduler
+        scheduler.step(miou)
+
+    # ---------------------
+    # Saving the Model
+    # ---------------------
     save_model(model)
     torch.save(model.state_dict(), log_dir / f"{model_name}.th")
     print(f"Model saved to {log_dir / f'{model_name}.th'}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
