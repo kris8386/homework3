@@ -66,7 +66,8 @@ def train(
             img = batch["image"].to(device)
             seg_target = batch["track"].to(device)
             depth_target = batch["depth"].to(device)
-            print(f' Depth target shape: {depth_target.shape}')
+            if depth_target.dim() == 3:
+                depth_target = depth_target.unsqueeze(1)
             optimizer.zero_grad()
 
             seg_output, depth_output = model(img)
