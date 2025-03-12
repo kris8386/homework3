@@ -45,13 +45,11 @@ def train(
     val_data = load_data("drive_data/val", shuffle=False)
 
     # Define losses
-    class_weights = torch.tensor([0.1, 0.3, 0.6]).to(device)  # Example weighting
     segmentation_loss =  nn.CrossEntropyLoss()  # Or use cross-entropy, etc.
     depth_loss = nn.L1Loss(reduction="mean")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5, verbose=True)
-    scaler = GradScaler()
 
     global_step = 0
     metrics = {key: [] for key in ["train_seg_loss", "train_depth_loss", "val_seg_loss", "val_depth_loss"]}
@@ -68,18 +66,16 @@ def train(
             img = batch["image"].to(device)
             seg_target = batch["track"].to(device)
             depth_target = batch["depth"].to(device)
-
+            print(f' Depth target shape: {depth_target.shape}')
             optimizer.zero_grad()
 
-            with autocast():  # Mixed precision
-                seg_output, depth_output = model(img)
-                loss_seg = segmentation_loss(seg_output, seg_target)
-                loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
-                total_loss = loss_seg + loss_depth
+            seg_output, depth_output = model(img)
+            loss_seg = segmentation_loss(seg_output, seg_target)
+            loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
+            total_loss = loss_seg + loss_depth
 
-            scaler.scale(total_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            total_loss.backward()
+            optimizer.step()
 
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
