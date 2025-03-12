@@ -125,7 +125,7 @@ class Detector(nn.Module):
         
         # Outputs
         logits = self.segmentation_head(dec2_out)
-        depth = self.depth_head(dec2_out)  # Ensure (B, 1, H, W)
+        depth = self.depth_head(dec2_out).squeeze(1)  # Ensure (B, H, W)
         
         return logits, depth
 
