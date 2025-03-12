@@ -13,8 +13,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from .models import Detector, load_model, save_model
 from .datasets.road_dataset import load_data
 from .metrics import DetectionMetric, ConfusionMatrix  # <--- HERE
-from segmentation_models_pytorch.losses import DiceLoss
-
 
 def train(
     exp_dir: str = "logs",
@@ -48,7 +46,7 @@ def train(
 
     # Define losses
     class_weights = torch.tensor([0.1, 0.3, 0.6]).to(device)  # Example weighting
-    segmentation_loss = DiceLoss()  # Or use cross-entropy, etc.
+    segmentation_loss =  nn.CrossEntropyLoss()  # Or use cross-entropy, etc.
     depth_loss = nn.L1Loss(reduction="mean")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
