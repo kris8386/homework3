@@ -151,9 +151,11 @@ def train(
         logger.add_scalar("Metrics/Depth_MAE", mean_depth_error, epoch)
         logger.add_scalar("Metrics/Lane_Depth_MAE", lane_boundary_error, epoch)
 
-        # Use mIoU to drive the learning rate scheduler
-        scheduler.step(miou)
-
+        # Use accuracy to drive the learning rate scheduler
+        scheduler.step(accuracy)
+        confusion_matrix.reset()
+        detection_metric.reset()   
+        
     # ---------------------
     # Saving the Model
     # ---------------------
