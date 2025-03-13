@@ -80,8 +80,8 @@ class Classifier(nn.Module):
 class Detector(nn.Module):
     def __init__(self, in_channels=3, num_classes=3):
         super().__init__()
-        
-        # Downsampling (Encoder)
+
+        # Encoder: Downsampling with increasing feature maps
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
@@ -90,45 +90,58 @@ class Detector(nn.Module):
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
         )
-        
-        # Upsampling (Decoder)
+        self.enc3 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # Extra Downsampling Layer
+            nn.ReLU()
+        )
+
+        # Decoder: Upsampling with skip connections
         self.dec1 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
             nn.ReLU()
         )
         self.dec2 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),  # Skip connection added
+            nn.ConvTranspose2d(64, 16, kernel_size=4, stride=2, padding=1),
             nn.ReLU()
         )
-        
+        self.dec3 = nn.Sequential(
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.ReLU()
+        )
+
         # Segmentation Head
         self.segmentation_head = nn.ConvTranspose2d(16, num_classes, kernel_size=3, stride=1, padding=1)
-        
-        # Depth Prediction Head (Ensuring (B, 1, H, W) output)
+
+        # Depth Prediction Head
         self.depth_head = nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = (x - torch.as_tensor(INPUT_MEAN, device=x.device)[None, :, None, None]) / \
             torch.as_tensor(INPUT_STD, device=x.device)[None, :, None, None]
-        
+
         # Encoder forward pass
         enc1_out = self.enc1(x)
         enc2_out = self.enc2(enc1_out)
-        
-        # Decoder forward pass with correct skip connections
-        dec1_out = self.dec1(enc2_out)
-        dec1_out = torch.cat([dec1_out, enc1_out], dim=1)  # Correctly adding the skip connection
-        dec2_out = self.dec2(dec1_out)  # Recover original spatial resolution
-        
+        enc3_out = self.enc3(enc2_out)  # Extra Downsampling Layer
+
+        # Decoder with skip connections
+        dec1_out = self.dec1(enc3_out)
+        dec1_out = torch.cat([dec1_out, enc2_out], dim=1)  # Skip connection from enc2_out
+
+        dec2_out = self.dec2(dec1_out)
+        dec2_out = torch.cat([dec2_out, enc1_out], dim=1)  # Skip connection from enc1_out
+
+        dec3_out = self.dec3(dec2_out)  # Final upsample to original resolution
+
         # Outputs
-        logits = self.segmentation_head(dec2_out)  # (B, 3, H, W)
-        depth = self.depth_head(dec2_out).squeeze(1)  # (B, 1, H, W) (No squeezing)
+        logits = self.segmentation_head(dec3_out)  # (B, 3, H, W)
+        depth = self.depth_head(dec3_out).squeeze(1)  # (B, 1, H, W)
 
         return logits, depth
 
     def predict(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         logits, depth = self(x)
-        return logits.argmax(dim=1), depth  # Ensure shape consistency
+        return logits.argmax(dim=1), depth  # Ensure correct shapes
 
 
 MODEL_FACTORY = {
