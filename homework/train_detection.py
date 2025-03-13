@@ -44,7 +44,7 @@ def train(
     )
     val_data = load_data("drive_data/val", shuffle=False)
     # Define loss weights
-    seg_loss_weight = 4.0
+    seg_loss_weight = 3.0
 
     # Define losses
     segmentation_loss =  nn.CrossEntropyLoss()  # Or use cross-entropy, etc.
