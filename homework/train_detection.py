@@ -44,7 +44,7 @@ def train(
     )
     val_data = load_data("drive_data/val", shuffle=False)
     # Define loss weights
-    # seg_loss_weight = 2.0
+    seg_loss_weight = 3.0
 
     # Define losses
     segmentation_loss =  nn.CrossEntropyLoss()  # Or use cross-entropy, etc.
@@ -71,8 +71,8 @@ def train(
             optimizer.zero_grad()
 
             seg_output, depth_output = model(img)
-            # loss_seg = segmentation_loss(seg_output, seg_target) * seg_loss_weight
-            loss_seg = segmentation_loss(seg_output, seg_target)
+            loss_seg = segmentation_loss(seg_output, seg_target) * seg_loss_weight
+            # loss_seg = segmentation_loss(seg_output, seg_target)
             loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
 
             total_loss = loss_seg + loss_depth
