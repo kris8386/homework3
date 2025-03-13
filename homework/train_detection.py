@@ -17,8 +17,8 @@ from .metrics import DetectionMetric, ConfusionMatrix  # <--- HERE
 def train(
     exp_dir: str = "logs",
     model_name: str = "detector",
-    num_epoch: int = 50,
-    lr: float = 1e-3,
+    num_epoch: int = 30,
+    lr: float = 2e-3,
     batch_size: int = 128,
     seed: int = 2024,
     transform_pipeline: str = "default",
