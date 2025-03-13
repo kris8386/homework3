@@ -52,7 +52,7 @@ def train(
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5, verbose=True)
 
     global_step = 0
-    metrics = {key: [] for key in ["train_seg_loss", "train_depth_loss", "val_seg_loss", "val_depth_loss"]}
+    metrics = {key: [] for key in ["train_seg_loss", "train_depth_loss", "val_seg_loss", "val_depth_loss", "train_iou_loss", "val_iou_loss"]}
 
     for epoch in range(num_epoch):
         # ---------------------
@@ -76,11 +76,17 @@ def train(
             total_loss.backward()
             optimizer.step()
 
+            # Compute IoU loss
+            seg_preds = seg_output.argmax(dim=1)
+            iou_loss = 1 - ConfusionMatrix(num_classes=3).add(seg_preds, seg_target).compute()["iou"]
+
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
+            metrics["train_iou_loss"].append(iou_loss)
 
             logger.add_scalar("Loss/train_segmentation", loss_seg.item(), global_step)
             logger.add_scalar("Loss/train_depth", loss_depth.item(), global_step)
+            logger.add_scalar("Loss/train_IoU", iou_loss, global_step)
             global_step += 1
 
         # ---------------------
@@ -141,15 +147,20 @@ def train(
         epoch_train_depth_loss = torch.tensor(metrics["train_depth_loss"]).mean()
         epoch_val_seg_loss = torch.tensor(metrics["val_seg_loss"]).mean()
         epoch_val_depth_loss = torch.tensor(metrics["val_depth_loss"]).mean()
-
-        logger.add_scalar("Loss/val_segmentation", epoch_val_seg_loss, epoch)
-        logger.add_scalar("Loss/val_depth", epoch_val_depth_loss, epoch)
+        epoch_train_iou_loss = torch.tensor(metrics["train_iou_loss"]).mean()
+        epoch_val_iou_loss = torch.tensor(metrics["val_iou_loss"]).mean()
 
         # Log the new metrics
+        logger.add_scalar("Loss/val_segmentation", epoch_val_seg_loss, epoch)
+        logger.add_scalar("Loss/val_depth", epoch_val_depth_loss, epoch)
+        logger.add_scalar("Loss/train_segmentation", epoch_train_seg_loss, epoch)
+        logger.add_scalar("Loss/train_depth", epoch_train_depth_loss, epoch)
         logger.add_scalar("Metrics/mIoU", miou, epoch)
         logger.add_scalar("Metrics/Accuracy", accuracy, epoch)
         logger.add_scalar("Metrics/Depth_MAE", mean_depth_error, epoch)
         logger.add_scalar("Metrics/Lane_Depth_MAE", lane_boundary_error, epoch)
+        logger.add_scalar("Loss/epoch_train_IoU", epoch_train_iou_loss, epoch)
+        logger.add_scalar("Loss/epoch_val_IoU", epoch_val_iou_loss, epoch)
 
         # Use accuracy to drive the learning rate scheduler
         scheduler.step(accuracy)
