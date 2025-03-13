@@ -81,30 +81,34 @@ class Detector(nn.Module):
     def __init__(self, in_channels=3, num_classes=3):
         super().__init__()
         
-        # Encoder with skip connections
+        # Encoder with Batch Normalization
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(16),  # Added BatchNorm
             nn.ReLU()
         )
         self.enc2 = nn.Sequential(
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(32),  # Added BatchNorm
             nn.ReLU()
         )
         
-        # Decoder with skip connections
+        # Decoder with Batch Normalization
         self.dec1 = nn.Sequential(
             nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(16),  # Added BatchNorm
             nn.ReLU()
         )
         self.dec2 = nn.Sequential(
             nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(16),  # Added BatchNorm
             nn.ReLU()
         )
         
         # Segmentation head
         self.segmentation_head = nn.ConvTranspose2d(16, num_classes, kernel_size=3, stride=1, padding=1)
         
-        # Depth prediction head (with Sigmoid activation to constrain depth to 0-1)
+        # Depth prediction head (without squeezing, keeping (B, 1, H, W))
         self.depth_head = nn.Sequential(
             nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1),
             nn.Sigmoid()
