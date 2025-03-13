@@ -79,60 +79,72 @@ class Classifier(nn.Module):
 
 class Detector(nn.Module):
     def __init__(self, in_channels=3, num_classes=3):
-        super().__init__()
+        super(UNet, self).__init__()
         
-        # Encoder with skip connections
-        self.enc1 = nn.Sequential(
-            nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
-            nn.ReLU()
-        )
-        self.enc2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU()
-        )
+        # Encoder
+        self.enc1 = self.conv_block(in_channels, 64)
+        self.enc2 = self.conv_block(64, 128)
+        self.enc3 = self.conv_block(128, 256)
+        self.enc4 = self.conv_block(256, 512)
         
-        # Decoder with skip connections
-        self.dec1 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.ReLU()
-        )
-        self.dec2 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.ReLU()
-        )
+        # Bottleneck
+        self.bottleneck = self.conv_block(512, 1024)
         
-        # Segmentation head
-        self.segmentation_head = nn.ConvTranspose2d(16, num_classes, kernel_size=3, stride=1, padding=1)
+        # Decoder
+        self.dec4 = self.up_conv(1024, 512)
+        self.dec3 = self.up_conv(512, 256)
+        self.dec2 = self.up_conv(256, 128)
+        self.dec1 = self.up_conv(128, 64)
         
-        # Depth prediction head (with Sigmoid activation to constrain depth to 0-1)
+        # Output heads
+        self.segmentation_head = nn.Conv2d(64, num_classes, kernel_size=1)
         self.depth_head = nn.Sequential(
-            nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(64, 1, kernel_size=1),
             nn.Sigmoid()
         )
-
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        x = (x - torch.as_tensor(INPUT_MEAN, device=x.device)[None, :, None, None]) / \
-            torch.as_tensor(INPUT_STD, device=x.device)[None, :, None, None]
-        
-        # Encoder forward pass
+    
+    def conv_block(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+    
+    def up_conv(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
+            nn.ReLU()
+        )
+    
+    def forward(self, x):
         enc1_out = self.enc1(x)
-        enc2_out = self.enc2(enc1_out)
+        enc2_out = self.enc2(nn.MaxPool2d(2)(enc1_out))
+        enc3_out = self.enc3(nn.MaxPool2d(2)(enc2_out))
+        enc4_out = self.enc4(nn.MaxPool2d(2)(enc3_out))
         
-        # Decoder with skip connections
-        dec1_out = self.dec1(enc2_out)
-        dec1_out = torch.cat([dec1_out, enc1_out], dim=1)  # Skip connection
-        dec2_out = self.dec2(dec1_out)
+        bottleneck_out = self.bottleneck(nn.MaxPool2d(2)(enc4_out))
         
-        # Outputs
-        logits = self.segmentation_head(dec2_out)
-        depth = self.depth_head(dec2_out).squeeze(1)  # Ensure (B, H, W)
+        dec4_out = self.dec4(bottleneck_out)
+        dec4_out = torch.cat((dec4_out, enc4_out), dim=1)
+        
+        dec3_out = self.dec3(dec4_out)
+        dec3_out = torch.cat((dec3_out, enc3_out), dim=1)
+        
+        dec2_out = self.dec2(dec3_out)
+        dec2_out = torch.cat((dec2_out, enc2_out), dim=1)
+        
+        dec1_out = self.dec1(dec2_out)
+        dec1_out = torch.cat((dec1_out, enc1_out), dim=1)
+        
+        logits = self.segmentation_head(dec1_out)
+        depth = self.depth_head(dec1_out).squeeze(1)
         
         return logits, depth
-
-    def predict(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    
+    def predict(self, x):
         logits, depth = self(x)
         return logits.argmax(dim=1), depth
-
 
 MODEL_FACTORY = {
     "classifier": Classifier,
