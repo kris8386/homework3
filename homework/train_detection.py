@@ -43,6 +43,8 @@ def train(
         transform_pipeline=transform_pipeline,
     )
     val_data = load_data("drive_data/val", shuffle=False)
+    # Define loss weights
+    seg_loss_weight = 2.0
 
     # Define losses
     segmentation_loss =  nn.CrossEntropyLoss()  # Or use cross-entropy, etc.
@@ -63,35 +65,25 @@ def train(
             metrics[key].clear()
 
         for batch in train_data:
-            confusion_matrix = ConfusionMatrix(num_classes=3)  # For mIoU & accuracy
             img = batch["image"].to(device)
             seg_target = batch["track"].to(device)
             depth_target = batch["depth"].to(device)
             optimizer.zero_grad()
 
             seg_output, depth_output = model(img)
-            loss_seg = segmentation_loss(seg_output, seg_target)
+            loss_seg = segmentation_loss(seg_output, seg_target) * seg_loss_weight
             loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
-            # Compute IoU loss
-            seg_preds = seg_output.argmax(dim=1)
 
-            # Update confusion matrix (for mIoU)
-            confusion_matrix.add(seg_preds, seg_target)
-            iou_loss = 1 - confusion_matrix.compute()["iou"]
-            total_loss = loss_seg + loss_depth + iou_loss 
+            total_loss = loss_seg + loss_depth
 
             total_loss.backward()
             optimizer.step()
 
-
-
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
-            metrics["train_iou_loss"].append(iou_loss)
 
             logger.add_scalar("Loss/train_segmentation", loss_seg.item(), global_step)
             logger.add_scalar("Loss/train_depth", loss_depth.item(), global_step)
-            logger.add_scalar("Loss/train_IoU", iou_loss, global_step)
             global_step += 1
 
         # ---------------------
@@ -99,7 +91,7 @@ def train(
         # ---------------------
         with torch.no_grad():
             model.eval()
-            confusion_matrix.reset()  # For mIoU & accuracy
+            confusion_matrix = ConfusionMatrix(num_classes=3)  # For mIoU & accuracy
             detection_metric = DetectionMetric(num_classes=3)  # If also tracking detection/road-depth metrics
 
             val_depth_errors = []
@@ -152,8 +144,6 @@ def train(
         epoch_train_depth_loss = torch.tensor(metrics["train_depth_loss"]).mean()
         epoch_val_seg_loss = torch.tensor(metrics["val_seg_loss"]).mean()
         epoch_val_depth_loss = torch.tensor(metrics["val_depth_loss"]).mean()
-        epoch_train_iou_loss = torch.tensor(metrics["train_iou_loss"]).mean()
-        epoch_val_iou_loss = torch.tensor(metrics["val_iou_loss"]).mean()
 
         # Log the new metrics
         logger.add_scalar("Loss/val_segmentation", epoch_val_seg_loss, epoch)
@@ -164,8 +154,6 @@ def train(
         logger.add_scalar("Metrics/Accuracy", accuracy, epoch)
         logger.add_scalar("Metrics/Depth_MAE", mean_depth_error, epoch)
         logger.add_scalar("Metrics/Lane_Depth_MAE", lane_boundary_error, epoch)
-        logger.add_scalar("Loss/epoch_train_IoU", epoch_train_iou_loss, epoch)
-        logger.add_scalar("Loss/epoch_val_IoU", epoch_val_iou_loss, epoch)
 
         # Use accuracy to drive the learning rate scheduler
         scheduler.step(accuracy)
