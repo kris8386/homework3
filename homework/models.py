@@ -81,7 +81,7 @@ class Detector(nn.Module):
     def __init__(self, in_channels=3, num_classes=3):
         super().__init__()
         
-        # Downsampling (Encoder)
+        # Encoder with skip connections
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
             nn.ReLU()
@@ -91,21 +91,24 @@ class Detector(nn.Module):
             nn.ReLU()
         )
         
-        # Upsampling (Decoder)
+        # Decoder with skip connections
         self.dec1 = nn.Sequential(
             nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
             nn.ReLU()
         )
         self.dec2 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),  # Skip connection added
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
             nn.ReLU()
         )
         
-        # Segmentation Head
+        # Segmentation head
         self.segmentation_head = nn.ConvTranspose2d(16, num_classes, kernel_size=3, stride=1, padding=1)
         
-        # Depth Prediction Head (Ensuring (B, 1, H, W) output)
-        self.depth_head = nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1)
+        # Depth prediction head (with Sigmoid activation to constrain depth to 0-1)
+        self.depth_head = nn.Sequential(
+            nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1),
+            nn.Sigmoid()
+        )
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = (x - torch.as_tensor(INPUT_MEAN, device=x.device)[None, :, None, None]) / \
@@ -115,20 +118,20 @@ class Detector(nn.Module):
         enc1_out = self.enc1(x)
         enc2_out = self.enc2(enc1_out)
         
-        # Decoder forward pass with correct skip connections
+        # Decoder with skip connections
         dec1_out = self.dec1(enc2_out)
-        dec1_out = torch.cat([dec1_out, enc1_out], dim=1)  # Correctly adding the skip connection
-        dec2_out = self.dec2(dec1_out)  # Recover original spatial resolution
+        dec1_out = torch.cat([dec1_out, enc1_out], dim=1)  # Skip connection
+        dec2_out = self.dec2(dec1_out)
         
         # Outputs
-        logits = self.segmentation_head(dec2_out)  # (B, 3, H, W)
-        depth = self.depth_head(dec2_out).squeeze(1)  # (B, 1, H, W) (No squeezing)
-
+        logits = self.segmentation_head(dec2_out)
+        depth = self.depth_head(dec2_out).squeeze(1)  # Ensure (B, H, W)
+        
         return logits, depth
 
     def predict(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         logits, depth = self(x)
-        return logits.argmax(dim=1), depth  # Ensure shape consistency
+        return logits.argmax(dim=1), depth
 
 
 MODEL_FACTORY = {
