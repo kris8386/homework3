@@ -63,6 +63,7 @@ def train(
             metrics[key].clear()
 
         for batch in train_data:
+            confusion_matrix = ConfusionMatrix(num_classes=3)  # For mIoU & accuracy
             img = batch["image"].to(device)
             seg_target = batch["track"].to(device)
             depth_target = batch["depth"].to(device)
@@ -78,7 +79,10 @@ def train(
 
             # Compute IoU loss
             seg_preds = seg_output.argmax(dim=1)
-            iou_loss = 1 - ConfusionMatrix(num_classes=3).add(seg_preds, seg_target).compute()["iou"]
+
+            # Update confusion matrix (for mIoU)
+            confusion_matrix.add(seg_preds, seg_target)
+            iou_loss = 1 - confusion_matrix.compute()["iou"]
 
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
@@ -94,7 +98,7 @@ def train(
         # ---------------------
         with torch.no_grad():
             model.eval()
-            confusion_matrix = ConfusionMatrix(num_classes=3)  # For mIoU & accuracy
+            confusion_matrix.reset()  # For mIoU & accuracy
             detection_metric = DetectionMetric(num_classes=3)  # If also tracking detection/road-depth metrics
 
             val_depth_errors = []
