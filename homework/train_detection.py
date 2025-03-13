@@ -72,17 +72,18 @@ def train(
             seg_output, depth_output = model(img)
             loss_seg = segmentation_loss(seg_output, seg_target)
             loss_depth = depth_loss(torch.clamp(depth_output, 0, 1), depth_target)
-            total_loss = loss_seg + loss_depth
-
-            total_loss.backward()
-            optimizer.step()
-
             # Compute IoU loss
             seg_preds = seg_output.argmax(dim=1)
 
             # Update confusion matrix (for mIoU)
             confusion_matrix.add(seg_preds, seg_target)
             iou_loss = 1 - confusion_matrix.compute()["iou"]
+            total_loss = loss_seg + loss_depth + iou_loss 
+
+            total_loss.backward()
+            optimizer.step()
+
+
 
             metrics["train_seg_loss"].append(loss_seg.item())
             metrics["train_depth_loss"].append(loss_depth.item())
