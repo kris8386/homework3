@@ -84,31 +84,51 @@ class Detector(nn.Module):
         # Encoder with Batch Normalization
         self.enc1 = nn.Sequential(
             nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(16),  # Added BatchNorm
+            nn.BatchNorm2d(16),
             nn.ReLU()
         )
         self.enc2 = nn.Sequential(
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),  # Added BatchNorm
+            nn.BatchNorm2d(32),
+            nn.ReLU()
+        )
+        self.enc3 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+        self.enc4 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU()
         )
         
-        # Decoder with Batch Normalization
+        # Decoder with Batch Normalization and Skip Connections
         self.dec1 = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(16),  # Added BatchNorm
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU()
         )
         self.dec2 = nn.Sequential(
+            nn.ConvTranspose2d(128, 32, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU()
+        )
+        self.dec3 = nn.Sequential(
+            nn.ConvTranspose2d(64, 16, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU()
+        )
+        self.dec4 = nn.Sequential(
             nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(16),  # Added BatchNorm
+            nn.BatchNorm2d(16),
             nn.ReLU()
         )
         
         # Segmentation head
         self.segmentation_head = nn.ConvTranspose2d(16, num_classes, kernel_size=3, stride=1, padding=1)
         
-        # Depth prediction head (without squeezing, keeping (B, 1, H, W))
+        # Depth prediction head
         self.depth_head = nn.Sequential(
             nn.ConvTranspose2d(16, 1, kernel_size=3, stride=1, padding=1),
             nn.Sigmoid()
@@ -121,22 +141,27 @@ class Detector(nn.Module):
         # Encoder forward pass
         enc1_out = self.enc1(x)
         enc2_out = self.enc2(enc1_out)
+        enc3_out = self.enc3(enc2_out)
+        enc4_out = self.enc4(enc3_out)
         
         # Decoder with skip connections
-        dec1_out = self.dec1(enc2_out)
-        dec1_out = torch.cat([dec1_out, enc1_out], dim=1)  # Skip connection
+        dec1_out = self.dec1(enc4_out)
+        dec1_out = torch.cat([dec1_out, enc3_out], dim=1)
         dec2_out = self.dec2(dec1_out)
+        dec2_out = torch.cat([dec2_out, enc2_out], dim=1)
+        dec3_out = self.dec3(dec2_out)
+        dec3_out = torch.cat([dec3_out, enc1_out], dim=1)
+        dec4_out = self.dec4(dec3_out)
         
         # Outputs
-        logits = self.segmentation_head(dec2_out)
-        depth = self.depth_head(dec2_out).squeeze(1)  # Ensure (B, H, W)
+        logits = self.segmentation_head(dec4_out)
+        depth = self.depth_head(dec4_out).squeeze(1)  # Ensure (B, H, W)
         
         return logits, depth
 
     def predict(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         logits, depth = self(x)
         return logits.argmax(dim=1), depth
-
 
 MODEL_FACTORY = {
     "classifier": Classifier,
